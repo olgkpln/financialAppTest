@@ -1,6 +1,6 @@
-const axios = require('axios');
-const { GraphQLClient } = require('graphql-request');
-const { GRAPHQL_ENDPOINT, SERVER_BASE_URL, TRANSACTION_CATEGORIES, USERNAMES } = require('../consts');
+const axios = require("axios");
+const { GraphQLClient } = require("graphql-request");
+const { GRAPHQL_ENDPOINT, SERVER_BASE_URL, TRANSACTION_CATEGORIES, USERNAMES } = require("../consts");
 
 const client = new GraphQLClient(GRAPHQL_ENDPOINT);
 
@@ -29,52 +29,48 @@ const client = new GraphQLClient(GRAPHQL_ENDPOINT);
  *                                }
  */
 async function generateReport({ username, startDate, endDate }) {
-  const query =
-      `query GetTransactions($username: String!, $startDate: String, $endDate: String) {
-        transactions(username: $username, startDate: $startDate, endDate: $endDate) {
-          date
-          description
-          amount
-        }
-      }`;
 
-  const variables = {
-    username: username,
-    startDate: startDate,
-    endDate: endDate
-  };
+    if (startDate !== undefined && validateDateFormat(startDate) === false) {
+        throw "wrong date format provided for startDate, use DD/MM/YYYY";
+    }
 
-  let graphqlResponse = await client.request(query, variables);
+    if (endDate !== undefined && validateDateFormat(endDate) === false) {
+        throw "wrong date format provided for endDate, use DD/MM/YYYY";
+    }
 
-  let transactions = graphqlResponse.transactions;
+    let graphqlResponse = null;
+    try {
+        graphqlResponse = await client.request(getQuery(), {username, startDate, endDate});
+    } catch (e) {
+        return JSON.stringify({ });
+    }
+    let report = {};
 
-  let grouped = { };
+    let enriched = [];
+    for (let t of graphqlResponse.transactions) {
+        let description = t.description;
+        let amount = t.amount;
+        enriched.push(
+            getClassification({description: description})
+                .then(x => {
+                    let classification = x.data.transactionCategory;
+                    if (classification === undefined) {
+                        classification = "NO_CATEGORY";
+                    }
+                    if (report[classification] === undefined) {
+                        report[classification] = 0;
+                    }
+                    report[classification] += amount;
+                })
+                .catch(e => {
+                    console.error("error while trying to get classifications", e)
+                })
+        );
+    }
 
-  let enriched = [];
-  for (let t of transactions) {
-    let description = t.description;
-    let amount = t.amount;
-    enriched.push(
-        {
-          classification: getClassification({description: description})
-              .then(x => {
-                let classification = x.data.transactionCategory;
-                if (classification === undefined) {
-                  classification = "NO_CATEGORY";
-                }
-                if (grouped[classification] === undefined) {
-                  grouped[classification] = 0;
-                }
-                grouped[classification] += amount;
-              })
-        }
-    );
-  }
+    await Promise.all(enriched);
 
-  await Promise.all(enriched.map(c => c.classification));
-
-  return JSON.stringify(grouped);
-
+    return JSON.stringify(report);
 }
 
 async function getClassification({ description }) {
@@ -83,11 +79,31 @@ async function getClassification({ description }) {
 
   let config = {
     headers: {
-      'Content-Type': 'application/json'
+      "Content-Type": "application/json"
     }
   };
 
-  return axios.post('http://localhost:4000/transaction/classification', data, config);
+  return axios.post("http://localhost:4000/transaction/classification", data, config);
+}
+
+function getQuery() {
+    return `query GetTransactions($username: String!, $startDate: String, $endDate: String) {
+        transactions(username: $username, startDate: $startDate, endDate: $endDate) {
+          date
+          description
+          amount
+        }
+      }`;
+}
+
+function validateDateFormat(date) {
+    const reg = /(0[1-9]|[12][0-9]|3[01])[/](0[1-9]|1[012])[/](19|20)\d\d/;
+    if (date.match(reg)) {
+        return true;
+    }
+    else {
+        return false;
+    }
 }
 
 module.exports = {
