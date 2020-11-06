@@ -28,7 +28,7 @@ const client = new GraphQLClient(GRAPHQL_ENDPOINT);
  *                                   ENTERTAINMENT: 0
  *                                }
  */
-function generateReport({ username, startDate, endDate }) {
+async function generateReport({ username, startDate, endDate }) {
   const query =
       `query GetTransactions($username: String!, $startDate: String, $endDate: String) {
         transactions(username: $username, startDate: $startDate, endDate: $endDate) {
@@ -36,59 +36,58 @@ function generateReport({ username, startDate, endDate }) {
           description
           amount
         }
-      }`
+      }`;
 
   const variables = {
     username: username,
     startDate: startDate,
     endDate: endDate
+  };
+
+  let graphqlResponse = await client.request(query, variables);
+
+  let transactions = graphqlResponse.transactions;
+
+  let grouped = { };
+
+  let enriched = [];
+  for (let t of transactions) {
+    let description = t.description;
+    let amount = t.amount;
+    enriched.push(
+        {
+          classification: getClassification({description: description})
+              .then(x => {
+                let classification = x.data.transactionCategory;
+                if (classification === undefined) {
+                  classification = "NO_CATEGORY";
+                }
+                if (grouped[classification] === undefined) {
+                  grouped[classification] = 0;
+                }
+                grouped[classification] += amount;
+              })
+        }
+    );
   }
 
-  client.request(query, variables)
-  .then(async (data) => {
-    for (let t of data.transactions) {
-      let r = await (getClassification({description: t.description}));
-    }
-  })
-  .catch((e) => console.log(e));
+  await Promise.all(enriched.map(c => c.classification));
+
+  return JSON.stringify(grouped);
+
 }
 
 async function getClassification({ description }) {
 
-  var axios = require('axios');
-  var data = JSON.stringify({"transactionDescription":"Star taxies"});
+  let data = JSON.stringify({ "transactionDescription" : description } );
 
-  var config = {
-    method: 'post',
-    url: 'http://localhost:4000/transaction/classification',
+  let config = {
     headers: {
-      'Content-Type': 'application/json',
-    },
-    data : data
+      'Content-Type': 'application/json'
+    }
   };
 
-  axios(config)
-      .then(function (response) {
-        console.log(JSON.stringify(response.data));
-      })
-      .catch(function (error) {
-        console.log("expo replied with error: ", error)
-      });
-
-
-  // var data = JSON.stringify({"transactionDescription":description});
-  //
-  // var config = {
-  //   headers: {
-  //     'Content-Type': 'application/json'
-  //   }
-  // };
-  // try {
-  //   let r = await axios.post('http://localhost:4000/transaction/classification', data, config);
-  //   console.log(r.data);
-  // } catch (e) {
-  //   console.log(e);
-  // }
+  return axios.post('http://localhost:4000/transaction/classification', data, config);
 }
 
 module.exports = {
