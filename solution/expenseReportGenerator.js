@@ -29,8 +29,66 @@ const client = new GraphQLClient(GRAPHQL_ENDPOINT);
  *                                }
  */
 function generateReport({ username, startDate, endDate }) {
-  // TODO your solution starts here
-  // to run a graphql query you can use the graphql client as follows: client.request(YOUR_QUERY, QUERY_VARIABLES);
+  const query =
+      `query GetTransactions($username: String!, $startDate: String, $endDate: String) {
+        transactions(username: $username, startDate: $startDate, endDate: $endDate) {
+          date
+          description
+          amount
+        }
+      }`
+
+  const variables = {
+    username: username,
+    startDate: startDate,
+    endDate: endDate
+  }
+
+  client.request(query, variables)
+  .then(async (data) => {
+    for (let t of data.transactions) {
+      let r = await (getClassification({description: t.description}));
+    }
+  })
+  .catch((e) => console.log(e));
+}
+
+async function getClassification({ description }) {
+
+  var axios = require('axios');
+  var data = JSON.stringify({"transactionDescription":"Star taxies"});
+
+  var config = {
+    method: 'post',
+    url: 'http://localhost:4000/transaction/classification',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data : data
+  };
+
+  axios(config)
+      .then(function (response) {
+        console.log(JSON.stringify(response.data));
+      })
+      .catch(function (error) {
+        console.log("expo replied with error: ", error)
+      });
+
+
+  // var data = JSON.stringify({"transactionDescription":description});
+  //
+  // var config = {
+  //   headers: {
+  //     'Content-Type': 'application/json'
+  //   }
+  // };
+  // try {
+  //   let r = await axios.post('http://localhost:4000/transaction/classification', data, config);
+  //   console.log(r.data);
+  // } catch (e) {
+  //   console.log(e);
+  // }
 }
 
 module.exports = {
